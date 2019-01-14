@@ -2,11 +2,12 @@ local luann = require("luann")
 math.randomseed(89890)
 
 
-learningRate = 0.2 -- set between 0, 1
+learningRate = 0.1 -- set between 0, 1
 local err = 0.01 -- train until RMSE < 0.01
 
 --create a network with 2 inputs, 3 hidden cells, and 1 output
 myNetwork = luann:new({2, 3, 1}, learningRate, 'sigmoid')
+--myNetwork = luann:new({2, 3, 3, 3, 1}, learningRate, 'sigmoid') -- uncomment for an exciting convergance
 
 local inputs = {
 	{0,0}, {1,0}, {0,1}, {1,1}

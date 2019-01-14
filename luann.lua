@@ -184,7 +184,7 @@ end
 function Cell:new(numInputs)
 	local cell = {delta = 0, weights = {}, signal = 0}
 	for i = 1, numInputs do
-		cell.weights[i] = math.random() * 0.1
+		cell.weights[i] = math.random() - 0.5 -- keep values between -0.5 and 0.5
 	end
 	setmetatable(cell, self)
 	self.__index = self
@@ -217,7 +217,7 @@ function Layer:new(numCells, numInputs)
 	for i = 1, numCells do
 			cells[i] = Cell:new(numInputs)
 	end
-	local layer = {cells = cells, bias = math.random()}
+	local layer = {cells = cells, bias = math.random() - 0.5}
 	setmetatable(layer, self)
 	self.__index = self
 	return layer
@@ -256,7 +256,7 @@ function luann:train(inputs, expectedOutput, rmseThreshold)
 			out[i] = self:getOutputs()
 		end
 		local rmse = self:getRMSE(out, expectedOutput)
-		if count>50000 then
+		if count>10000 then
 			print("Current RMSE: " .. rmse)
 			count = 0
 		end
