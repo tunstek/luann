@@ -252,7 +252,7 @@ function luann:train(inputs, expectedOutput, rmseThreshold)
 	local out = {}
 	local count = 0
 	local rmse = -1
-	local rmseLast = -1
+	local rmsePrev = -1
 	repeat
 		self:backupWeights()
 		for i=1, #inputs do
@@ -262,21 +262,21 @@ function luann:train(inputs, expectedOutput, rmseThreshold)
 		end
 		rmse = self:getRMSE(out, expectedOutput)
 		-- variable learning rate
-		if rmseLast ~= -1 then
+		if rmsePrev ~= -1 then
 			-- this is not the first iteration
-			if rmse > rmseLast*1.04 then
+			if rmse > rmsePrev*1.04 then
 				self:restoreWeights()
 				self.learningRate = self.learningRate*0.7
 				if self.learningRate < 0.00000000001 then self.learningRate = 0.00000000001
 				else print("Decreasing learning rate: " .. self.learningRate) print(rmse) end
-			elseif rmse < rmseLast*0.8 then
+			elseif rmse < rmsePrev then
 				self.learningRate = self.learningRate*1.05
-				if self.learningRate > 0.5 then self.learningRate = 0.5
+				if self.learningRate > 1 then self.learningRate = 1
 				else print("Increasing learning rate: " .. self.learningRate) print(rmse) end
 			end
-		else
-			rmseLast = rmse
 		end
+
+		rmsePrev = rmse
 		-- some feedback during training
 		if count>10000 then
 			print("Current RMSE: " .. rmse)
