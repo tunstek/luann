@@ -1,8 +1,8 @@
 local luann = require("luann")
 math.randomseed(89890)
 
-
-learningRate = 0.1 -- set between 0, 1
+local useVariableLearningRate = true
+local learningRate = 0.1 -- set between 0, 1
 local err = 0.01 -- train until RMSE < 0.01
 
 --create a network with 2 inputs, 3 hidden cells, and 1 output
@@ -17,7 +17,7 @@ local expectedOutputs = {
 }
 
 -- train the network
-myNetwork:train(inputs, expectedOutputs, err)
+myNetwork:train(inputs, expectedOutputs, err, useVariableLearningRate)
 
 --print the signal of the single output cell when :activated with different inputs
 print("Results:")

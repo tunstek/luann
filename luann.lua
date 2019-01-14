@@ -248,42 +248,44 @@ end
 -- inputs = collection of a collection of inputs to train on
 -- expectedOutput = collection of a collection of expected outputs for the given inputs
 -- rmseThreshold = train until RMSE falls below this value
-function luann:train(inputs, expectedOutput, rmseThreshold)
+function luann:train(inputs, expectedOutput, rmseThreshold, useVariableLearningRate)
 	local out = {}
-	local count = 0
+	local iterations = 0
 	local rmse = -1
 	local rmsePrev = -1
 	repeat
-		self:backupWeights()
+		if useVariableLearningRate then
+			self:backupWeights()
+		end
 		for i=1, #inputs do
 			-- for each set of inputs
 			self:bp(inputs[i], expectedOutput[i])
 			out[i] = self:getOutputs()
 		end
 		rmse = self:getRMSE(out, expectedOutput)
-		-- variable learning rate
-		if rmsePrev ~= -1 then
-			-- this is not the first iteration
-			if rmse > rmsePrev*1.04 then
-				self:restoreWeights()
-				self.learningRate = self.learningRate*0.7
-				if self.learningRate < 0.00000000001 then self.learningRate = 0.00000000001
-				else print("Decreasing learning rate: " .. self.learningRate) print(rmse) end
-			elseif rmse < rmsePrev then
-				self.learningRate = self.learningRate*1.05
-				if self.learningRate > 1 then self.learningRate = 1
-				else print("Increasing learning rate: " .. self.learningRate) print(rmse) end
+		if useVariableLearningRate then
+			-- variable learning rate
+			if rmsePrev ~= -1 then
+				-- this is not the first iteration
+				if rmse > rmsePrev*1.04 then
+					self:restoreWeights()
+					self.learningRate = self.learningRate*0.7
+					if self.learningRate < 0.00000000001 then self.learningRate = 0.00000000001 end
+				elseif rmse < rmsePrev then
+					self.learningRate = self.learningRate*1.05
+					if self.learningRate > 1 then self.learningRate = 1 end
+				end
 			end
+			rmsePrev = rmse
 		end
 
-		rmsePrev = rmse
 		-- some feedback during training
-		if count>10000 then
+		if iterations%10000==0 then
 			print("Current RMSE: " .. rmse)
-			count = 0
 		end
-		count = count + 1
+		iterations = iterations + 1
 	until(rmse < rmseThreshold)
+	print("\nComplete.\nRMSE: "..rmse.."\nIterations: " .. iterations.."\n")
 end
 
 --// luann:forwardPropagate(inputs)
