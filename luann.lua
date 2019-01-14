@@ -181,8 +181,9 @@ end
 -- numInputs -> The number of inputs to the new cell
 --		Note: The cell has a structure containing weights that modify the input from the previous layer.
 --					Each cell also has a signal, or output.
+--					weightsPrev is used to store the current weights for variable learning rate
 function Cell:new(numInputs)
-	local cell = {delta = 0, weights = {}, signal = 0}
+	local cell = {delta = 0, weights = {}, weightsPrev = {}, signal = 0}
 	for i = 1, numInputs do
 		cell.weights[i] = math.random() - 0.5 -- keep values between -0.5 and 0.5
 	end
@@ -210,6 +211,7 @@ end
 -- numCells -> Optional (default: 1). Number of cells in this layer
 -- numInputs -> Optional (default: 1). Number of inputs to this layer
 -- 		Note: The layer is a table of cells.
+--					biasPrev is used to store the current bias for variable learning rate
 function Layer:new(numCells, numInputs)
 	numCells = numCells or 1
 	numInputs = numInputs or 1
@@ -217,7 +219,7 @@ function Layer:new(numCells, numInputs)
 	for i = 1, numCells do
 			cells[i] = Cell:new(numInputs)
 	end
-	local layer = {cells = cells, bias = math.random() - 0.5}
+	local layer = {cells = cells, bias = math.random() - 0.5, biasPrev = -1}
 	setmetatable(layer, self)
 	self.__index = self
 	return layer
@@ -249,13 +251,33 @@ end
 function luann:train(inputs, expectedOutput, rmseThreshold)
 	local out = {}
 	local count = 0
+	local rmse = -1
+	local rmseLast = -1
 	repeat
+		self:backupWeights()
 		for i=1, #inputs do
 			-- for each set of inputs
 			self:bp(inputs[i], expectedOutput[i])
 			out[i] = self:getOutputs()
 		end
-		local rmse = self:getRMSE(out, expectedOutput)
+		rmse = self:getRMSE(out, expectedOutput)
+		-- variable learning rate
+		if rmseLast ~= -1 then
+			-- this is not the first iteration
+			if rmse > rmseLast*1.04 then
+				self:restoreWeights()
+				self.learningRate = self.learningRate*0.7
+				if self.learningRate < 0.00000000001 then self.learningRate = 0.00000000001
+				else print("Decreasing learning rate: " .. self.learningRate) print(rmse) end
+			elseif rmse < rmseLast*0.8 then
+				self.learningRate = self.learningRate*1.05
+				if self.learningRate > 0.5 then self.learningRate = 0.5
+				else print("Increasing learning rate: " .. self.learningRate) print(rmse) end
+			end
+		else
+			rmseLast = rmse
+		end
+		-- some feedback during training
 		if count>10000 then
 			print("Current RMSE: " .. rmse)
 			count = 0
@@ -317,6 +339,38 @@ function luann:activate(inputs)
 		for j = 1, #cells do
 			--activate each cell
 			cells[j]:activate(passInputs, passBias, self.actiFuncName)
+		end
+	end
+end
+
+function luann:backupWeights()
+	local numLayers = #self
+	for i = 2, numLayers do
+		-- save the current bias
+		self[i].biasPrev = self[i].bias
+		for j = 1, #self[i].cells do
+			for k = 1, #self[i].cells[j].weights do
+				-- save the current weights
+				local weights = self[i].cells[j].weights
+				local weightsPrev = self[i].cells[j].weightsPrev
+				weightsPrev[k] = weights[k]
+			end
+		end
+	end
+end
+
+function luann:restoreWeights()
+	local numLayers = #self
+	for i = 2, numLayers do
+		-- restore the prev bias
+		self[i].bias = self[i].biasPrev
+		for j = 1, #self[i].cells do
+			for k = 1, #self[i].cells[j].weights do
+				-- restore the prev weights
+				local weights = self[i].cells[j].weights
+				local weightsPrev = self[i].cells[j].weightsPrev
+				weights[k] = weightsPrev[k]
+			end
 		end
 	end
 end
