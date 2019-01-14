@@ -253,6 +253,10 @@ function luann:train(inputs, expectedOutput, rmseThreshold, useVariableLearningR
 	local iterations = 0
 	local rmse = -1
 	local rmsePrev = -1
+
+	local prevLR = self.learningRate
+	if useVariableLearningRate then self.learningRate = 0.00000000001 end
+
 	repeat
 		if useVariableLearningRate then
 			self:backupWeights()
@@ -262,18 +266,20 @@ function luann:train(inputs, expectedOutput, rmseThreshold, useVariableLearningR
 			self:bp(inputs[i], expectedOutput[i])
 			out[i] = self:getOutputs()
 		end
-		rmse = self:getRMSE(out, expectedOutput)
+
 		if useVariableLearningRate then
-			-- variable learning rate
+			rmse = self:getRMSE(out, expectedOutput)
 			if rmsePrev ~= -1 then
 				-- this is not the first iteration
 				if rmse > rmsePrev*1.04 then
 					self:restoreWeights()
 					self.learningRate = self.learningRate*0.7
-					if self.learningRate < 0.00000000001 then self.learningRate = 0.00000000001 end
+					if self.learningRate < 0.00000000001 then self.learningRate = 0.00000000001
+					else print("Decreased LR: "..self.learningRate) end
 				elseif rmse < rmsePrev then
 					self.learningRate = self.learningRate*1.05
-					if self.learningRate > 1 then self.learningRate = 1 end
+					if self.learningRate > 1 then self.learningRate = 1
+					else print("Increased LR: "..self.learningRate) end
 				end
 			end
 			rmsePrev = rmse
@@ -281,10 +287,19 @@ function luann:train(inputs, expectedOutput, rmseThreshold, useVariableLearningR
 
 		-- some feedback during training
 		if iterations%10000==0 then
+			rmse = self:getRMSE(out, expectedOutput)
 			print("Current RMSE: " .. rmse)
+			if useVariableLearningRate then
+				print("Current LR: " .. self.learningRate)
+			end
 		end
+
 		iterations = iterations + 1
 	until(rmse < rmseThreshold)
+
+	-- reset to the old learning rate
+	self.learningRate = prevLR
+
 	print("\nComplete.\nRMSE: "..rmse.."\nIterations: " .. iterations.."\n")
 end
 
