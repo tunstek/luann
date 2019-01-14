@@ -157,52 +157,84 @@ writers = {
 		end;
 }
 
+
+
 local luann = {}
 local Layer = {}
 local Cell = {}
-local exp = math.exp
+local Activation = {}
 
---We start by creating the cells.
---The cell has a structure containing weights that modify the input from the previous layer.
---Each cell also has a signal, or output.
+
+--Define the activation functions
+Activation["sigmoid"] = function(signalSum)
+	return 1 / (1 + math.exp(-1*signalSum))
+end
+Activation["relu"] = function(signalSum)
+	return math.max(0, signalSum)
+end
+Activation["leakyrelu"] = function(signalSum)
+	return math.max(0.01*signalSum, signalSum)
+end
+
+
+--// Cell:new(numInputs)
+-- numInputs -> The number of inputs to the new cell
+--		Note: The cell has a structure containing weights that modify the input from the previous layer.
+--					Each cell also has a signal, or output.
 function Cell:new(numInputs)
 	local cell = {delta = 0, weights = {}, signal = 0}
-		for i = 1, numInputs do
-			cell.weights[i] = math.random() * .1
-		end
-		setmetatable(cell, self)
-		self.__index = self
+	for i = 1, numInputs do
+		cell.weights[i] = math.random() * 0.1
+	end
+	setmetatable(cell, self)
+	self.__index = self
 	return cell
 end
 
-function Cell:activate(inputs, bias, threshold)
+--// Cell:activate(inputs, bias, actFuncName)
+-- inputs -> The collection of inputs to the cell
+-- bias -> The bias input to the cell
+-- actFuncName -> The name of the activation function (see luann:new)
+function Cell:activate(inputs, bias, actFuncName)
 		local signalSum = bias
 		local weights = self.weights
 		for i = 1, #weights do
 			signalSum = signalSum + (weights[i] * inputs[i])
 		end
-	self.signal = 1 / (1 + exp((signalSum * -1) / threshold))
+		res = Activation[actFuncName](signalSum)
+		self.signal = res
 end
 
---Next we create a Layer of cells. The layer is a table of cells.
+
+--// Layer:new([numCells [, numInputs]])
+-- numCells -> Optional (default: 1). Number of cells in this layer
+-- numInputs -> Optional (default: 1). Number of inputs to this layer
+-- 		Note: The layer is a table of cells.
 function Layer:new(numCells, numInputs)
 	numCells = numCells or 1
 	numInputs = numInputs or 1
 	local cells = {}
-		for i = 1, numCells do cells[i] = Cell:new(numInputs) end
-		local layer = {cells = cells, bias = math.random()}
-		setmetatable(layer, self)
-		self.__index = self
+	for i = 1, numCells do
+			cells[i] = Cell:new(numInputs)
+	end
+	local layer = {cells = cells, bias = math.random()}
+	setmetatable(layer, self)
+	self.__index = self
 	return layer
 end
 
---layers = {table of layer sizes from input to output}
-function luann:new(layers, learningRate, threshold)
-	local network = {learningRate = learningRate, threshold = threshold}
+
+--// luann:new(layers, learningRate [, actiFuncName])
+-- layers -> Table of layer sizes from input to output
+-- actiFuncName -> Optional (default: 'sigmoid'). Defines the NAME of the function (in the Activation table) to use in for activation.
+--   Note: For actiFuncName, the function itself cannot be passed due to issues with table persistence.
+--				 This is currently considered a workaround..
+function luann:new(layers, learningRate, actiFuncName)
+	local network = {learningRate = learningRate, actiFuncName = actiFuncName or 'sigmoid'}
 	--initialize the input layer
 	network[1] = Layer:new(layers[1], layers[1])
-	--initialize the hidden layers and output layer
 	for i = 2, #layers do
+		--initialize the hidden layers and output layer
 		network[i] = Layer:new(layers[i], layers[i-1])
 	end
 	setmetatable(network, self)
@@ -210,8 +242,67 @@ function luann:new(layers, learningRate, threshold)
 	return network
 end
 
+--// luann:train(inputs, expectedOutput, rmseThreshold)
+-- inputs = collection of a collection of inputs to train on
+-- expectedOutput = collection of a collection of expected outputs for the given inputs
+-- rmseThreshold = train until RMSE falls below this value
+function luann:train(inputs, expectedOutput, rmseThreshold)
+	local out = {}
+	local count = 0
+	repeat
+		for i=1, #inputs do
+			-- for each set of inputs
+			self:bp(inputs[i], expectedOutput[i])
+			out[i] = self:getOutputs()
+		end
+		local rmse = self:getRMSE(out, expectedOutput)
+		if count>50000 then
+			print("Current RMSE: " .. rmse)
+			count = 0
+		end
+		count = count + 1
+	until(rmse < rmseThreshold)
+end
+
+--// luann:forwardPropagate(inputs)
+-- propagates the inputs and returns the outputs, a convience function
+function luann:forwardPropagate(inputs)
+	self:activate(inputs)
+	return self:getOutputs()
+end
+
+--// luann:getOutputs()
+-- gets the set of previous outputs
+function luann:getOutputs()
+	local out = {}
+	for o=1, #self[#self].cells do
+		out[o] = self[#self].cells[o].signal
+	end
+	return out
+end
+
+--// luann:getRMSE(predictions, expected)
+-- predictions = a collection of a collection of predictions
+-- expected = a collection of a collection of expected outputs
+function luann:getRMSE(predictions, expected)
+	assert(#predictions == #expected, "ERR: #predictions ~= #expected")
+	local numElements = 0
+	local sum = 0
+	for i=1, #predictions do
+		-- for each set of predictions
+		for j=1, #predictions[i] do
+			-- for each output node
+			numElements = numElements+1
+			sum = sum + math.pow(expected[i][j]-predictions[i][j],2)
+		end
+	end
+	local mse = sum/numElements
+	return math.sqrt(mse)
+end
+
+--// luann:activate(inputs)
+-- inputs -> The collection of inputs to be forward propagated through the network
 function luann:activate(inputs)
-	local threshold = self.threshold
 	for i = 1, #inputs do
 		self[1].cells[i].signal = inputs[i]
 	end
@@ -225,106 +316,105 @@ function luann:activate(inputs)
 		local passBias = self[i].bias
 		for j = 1, #cells do
 			--activate each cell
-			cells[j]:activate(passInputs, passBias, threshold)
+			cells[j]:activate(passInputs, passBias, self.actiFuncName)
 		end
 	end
 end
 
-function luann:decode(hiddenSignal)
-
-	--iterate over the hidden layer and set their signals to hiddenInputs
-	for i = 1, #self[2].cells do
-		self[2].cells[i].signal = hiddenSignal[i]
-	end
-
-	local threshold = self.threshold
-
-	for i = 3, #self do
-		local passInputs = {}
-		local cells = self[i].cells
-		local prevCells = self[i-1].cells
-		for m = 1, #prevCells do
-			passInputs[m] = prevCells[m].signal
-		end
-		local passBias = self[i].bias
-		for j = 1, #cells do
-			--activate each cell
-			cells[j]:activate(passInputs, passBias, threshold)
-		end
-	end
-
-end
-
-
-function luann:bp(inputs, outputs)
+--// luann:bp(inputs, expectedOutputs)
+-- inputs -> The collection of training inputs for backpropagation
+-- expectedOutputs -> The collection of expected outputs for the given training inputs
+--		Note: Contains some debug info for when cell weights become inf and cell deltas become NaN
+function luann:bp(inputs, expectedOutputs)
 	self:activate(inputs) --update the internal inputs and outputs
-	local numSelf = #self
+	local numLayers = #self
 	local learningRate = self.learningRate
-	for i = numSelf, 2, -1 do --iterate backwards (nothing to calculate for input layer)
+	for i = numLayers, 2, -1 do --iterate backwards (nothing to calculate for input layer)
 		local numCells = #self[i].cells
 		local cells = self[i].cells
 		for j = 1, numCells do
-			local signal = cells[j].signal
-			if i ~= numSelf then --special calculations for output layer
+			-- for each cell in the current layer
+			local cellOutput = cells[j].signal
+			if i ~= numLayers then
 				local weightDelta = 0
-				local layer = self[i+1].cells
-				for k = 1, #self[i+1].cells do
-					weightDelta = weightDelta + layer[k].weights[j] * layer[k].delta
+				local nextLayerCells = self[i+1].cells
+				for k = 1, #nextLayerCells do
+					-- for each cell in the next layer
+					weightDelta = weightDelta + nextLayerCells[k].weights[j] * nextLayerCells[k].delta
+					-- ensure weightDelta does not become inf
+					assert(weightDelta ~= math.huge, "weightDelta: INF!\nnextLayerCells["..k.."].weights["..j.."]="..nextLayerCells[k].weights[j]..", \nnextLayerCells["..k.."].delta="..nextLayerCells[k].delta)
 				end
-				cells[j].delta = signal * (1 - signal) * weightDelta
-			else
-				cells[j].delta = (outputs[j] - signal) * signal * (1 - signal)
+				cells[j].delta = cellOutput * (1 - cellOutput) * weightDelta
+				-- ensure cell delta does not become NaN
+				assert(cells[j].delta == cells[j].delta, "cells["..j.."].delta: NaN!\n" .. "cellOutput="..cellOutput..",\nweightDelta="..weightDelta)
+			else --special calculations for output layer
+				cells[j].delta = (expectedOutputs[j] - cellOutput) * cellOutput * (1 - cellOutput)
+				-- ensure cell delta does not become NaN
+				assert(cells[j].delta == cells[j].delta, "cells["..j.."].delta: NaN! OUTPUT\nexpectedOutputs["..j.."]="..expectedOutputs[j]..",\ncellOutput="..cellOutput)
 			end
 		end
 	end
-
-	for i = 2, numSelf do
-		self[i].bias = self[i].cells[#self[i].cells].delta * learningRate
+	for i = 2, numLayers do
+		-- update the bias
+		self[i].bias = self[i].bias + learningRate * self[i].cells[#self[i].cells].delta
 		for j = 1, #self[i].cells do
 			for k = 1, #self[i].cells[j].weights do
+				-- update the weights
 				local weights = self[i].cells[j].weights
-				weights[k] = weights[k] + self[i].cells[j].delta * learningRate * self[i-1].cells[k].signal
+				weights[k] = weights[k] + learningRate * self[i].cells[j].delta  * self[i-1].cells[k].signal
 			end
 		end
 	end
 end
 
-function luann:saveNetwork(network, savefile)
-	print(savefile)
-	persistence.store(savefile, network)
+--// luann:saveNetwork(network, savefile)
+-- network -> The luann network to be saved
+-- path -> The path of the output file
+function luann:saveNetwork(network, path)
+	print("Saving network to: " .. path)
+	persistence.store(path, network)
 end
 
-function luann:loadNetwork(savefile)
-	local ann = persistence.load(savefile)
-		ann.bp = luann.bp
-		ann.activate = luann.activate
-		for i = 1, #ann do
-			for j = 1, #ann[i].cells do
-				ann[i].cells[j].activate = Cell.activate
-			end
+--// luann:loadNetwork(path)
+-- path -> The path of the file to load
+function luann:loadNetwork(path)
+	local ann = persistence.load(path)
+	ann.bp = luann.bp
+	ann.activate = luann.activate
+
+	for i = 1, #ann do
+		for j = 1, #ann[i].cells do
+			ann[i].cells[j].activate = Cell.activate
 		end
+	end
 	return(ann)
 end
 
-function luann:loadTrainingDataFromFile(fileName)
-local trainingData = {}
-local fileLines = {}
-    local f = io.open(fileName, "rb")
-		 for line in f:lines() do
-			table.insert (fileLines, line);
-		 end
+--// luann:loadTrainingDataFromFile(path)
+-- path -> The path of the file containing the training data
+function luann:loadTrainingDataFromFile(path)
+	local trainingData = {}
+	local fileLines = {}
+	local f = io.open(path, "rb")
+	for line in f:lines() do
+		table.insert (fileLines, line);
+	end
 	f:close()
-
 	for i = 1, #fileLines do
 		if i%2 == 0 then
-				local tempInputs = {}
-				for input in fileLines[i]:gmatch("%S+") do table.insert(tempInputs, tonumber(input)) end
-				local tempOutputs = {}
-				for output in fileLines[i+1]:gmatch("%S+") do table.insert(tempOutputs, tonumber(input)) end
+			local tempInputs = {}
+			for input in fileLines[i]:gmatch("%S+") do
+				table.insert(tempInputs, tonumber(input))
+			end
+			local tempOutputs = {}
+			for output in fileLines[i+1]:gmatch("%S+") do
+				table.insert(tempOutputs, tonumber(input))
+			end
 			table.insert(trainingData, {tempInputs, tempOutputs})
 		end
 	end
-return(trainingData)
+	return(trainingData)
 end
+
 
 return(luann)
